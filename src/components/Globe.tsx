@@ -1,55 +1,113 @@
-import { useEffect, useState } from 'react';
-import Globe from 'react-globe.gl';
+import React, { useEffect, useRef } from 'react';
+import * as THREE from 'three';
+import * as dat from 'dat.gui';
+import NormalMap from '../static/textures/NormalMap.png';
 
-const markerSvg = `<svg viewBox="-4 0 36 36">
-  <path fill="currentColor" d="M14,0 C21.732,0 28,5.641 28,12.6 C28,23.963 14,36 14,36 C14,36 0,24.064 0,12.6 C0,5.641 6.268,0 14,0 Z"></path>
-  <circle fill="black" cx="14" cy="14" r="7"></circle>
-</svg>`;
+// Loading
 
-type MarkerData = {
-  lat: number;
-  lng: number;
-  size: number;
-  color: string;
+const textureLoader = new THREE.TextureLoader();
+const normalTexture = textureLoader.load(NormalMap);
+
+// Debug
+const gui = new dat.GUI();
+
+const settings = {
+  color: '0xffffff',
+  spinSpeed: 0.5,
 };
+gui.add(settings, 'color').onChange((value) => {
+  console.log('Color changed to:', value);
+});
 
-const GlobeComponent = () => {
-  const [gData, setGData] = useState<MarkerData[]>([]);
+const ThreeSphere: React.FC = () => {
+  // Canvas
+  const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
-    const N = 5;
-    const data: MarkerData[] = [...Array(N).keys()].map(() => ({
-      lat: (Math.random() - 0.5) * 180, // Random latitude between -90 and 90
-      lng: (Math.random() - 0.5) * 360, // Random longitude between -180 and 180
-      size: 7 + Math.random() * 30, // Random size between 7 and 37
-      color: ['red', 'white', 'blue', 'green'][Math.floor(Math.random() * 4)], // Random color
-    }));
+    // Scene
+    const scene = new THREE.Scene();
 
-    setGData(data);
+    // Objects
+    const geometry = new THREE.SphereGeometry(1, 64, 64);
+
+    // Materials
+    const material = new THREE.MeshStandardMaterial();
+    material.metalness = 1;
+    material.roughness = 0.5;
+    material.normalMap = normalTexture;
+    material.color = new THREE.Color(settings.color);
+
+    // Mesh
+    const sphere = new THREE.Mesh(geometry, material);
+    scene.add(sphere);
+
+    // Lights
+    const pointLight = new THREE.PointLight(0xffffff, 1);
+    pointLight.position.set(2, 3, 4);
+    scene.add(pointLight);
+
+    const ambientLight = new THREE.AmbientLight(0xff0, 0.5);
+    scene.add(ambientLight);
+
+    // Sizes
+
+    const sizes = {
+      width: window.innerWidth,
+      height: window.innerHeight,
+    };
+
+    // Camera
+    // Base Camera
+
+    const camera = new THREE.PerspectiveCamera(75, sizes.width / sizes.height);
+
+    camera.position.z = 2;
+    scene.add(camera);
+
+    // Renderer
+    const renderer = new THREE.WebGLRenderer({
+      canvas: canvasRef.current!,
+      alpha: true, // Transparent background
+    });
+    renderer.setClearColor(0x000000, 0);
+
+    renderer.setSize(sizes.width, sizes.height);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    camera.aspect = sizes.width / sizes.height;
+    camera.updateProjectionMatrix();
+    // Update renderer
+    const handleResize = () => {
+      sizes.width = window.innerWidth;
+      sizes.height = window.innerHeight;
+      camera.aspect = sizes.width / sizes.height;
+      camera.updateProjectionMatrix();
+      renderer.setSize(sizes.width, sizes.height);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    };
+
+    window.addEventListener('resize', handleResize);
+
+    // Animation
+
+    const clock = new THREE.Clock();
+
+    const animate = () => {
+      const elapsedTime = clock.getElapsedTime();
+      sphere.rotation.y = 0.5 * elapsedTime;
+
+      renderer.render(scene, camera);
+      requestAnimationFrame(animate);
+    };
+
+    animate();
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      renderer.dispose();
+    };
   }, []);
 
-  return (
-    <Globe
-      globeImageUrl="//unpkg.com/three-globe/example/img/earth-dark.jpg"
-      htmlElementsData={gData}
-      htmlElement={(d: object) => {
-        const marker = d as MarkerData;
-
-        const el = document.createElement('div');
-        el.innerHTML = markerSvg;
-        el.style.color = marker.color;
-        el.style.width = `${marker.size}px`;
-
-        el.style.transform = 'translateY(-50px)';
-        el.style.pointerEvents = 'auto';
-        el.style.cursor = 'pointer';
-
-        el.onclick = () => console.info(marker);
-
-        return el;
-      }}
-    />
-  );
+  return <canvas ref={canvasRef} className="webgl" />;
 };
 
-export default GlobeComponent;
+export default ThreeSphere;
