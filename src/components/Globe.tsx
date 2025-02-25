@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import * as dat from 'dat.gui';
 import NormalMap from '../static/textures/NormalMap.png';
@@ -6,20 +6,13 @@ import NormalMap from '../static/textures/NormalMap.png';
 const ThreeSphere: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  let mouseX = 0;
-  let mouseY = 0;
+  const [selectedPoint, setSelectedPoint] = useState<string | null>(null);
 
-  let targetX = 0;
-  let targetY = 0;
-
-  const windowHalfX = window.innerWidth / 2;
-  const windowHalfY = window.innerHeight / 2;
-
-  const onDocumentMouseMove = (event: MouseEvent) => {
-    mouseX = event.clientX - windowHalfX;
-    mouseY = event.clientY - windowHalfY;
-  };
-  document.addEventListener('mousemove', onDocumentMouseMove);
+  let isMouseDown = false;
+  let lastRotationX = 0;
+  let lastRotationY = 0;
+  let prevMouseX = 0;
+  let prevMouseY = 0;
 
   useEffect(() => {
     // Scene
@@ -41,7 +34,48 @@ const ThreeSphere: React.FC = () => {
 
     // Mesh
     const sphere = new THREE.Mesh(geometry, material);
+    sphere.rotation.x = Math.PI / 2;
+    sphere.rotation.y = Math.PI / 4;
     scene.add(sphere);
+
+    // Marks
+    const markGeometry = new THREE.SphereGeometry(0.05, 8, 8);
+
+    const marks: { position: THREE.Vector3; info: string; color: number }[] = [
+      {
+        position: new THREE.Vector3(-0.7, 0.7, -0.2),
+        info: 'Contacts',
+        color: 0xff0000,
+      },
+      {
+        position: new THREE.Vector3(0.1, 0.5, -0.9),
+        info: 'Experience',
+        color: 0x0000ff,
+      },
+      {
+        position: new THREE.Vector3(0.9, 0.4, -0.4),
+        info: 'Skills',
+        color: 0x00ff00,
+      },
+      {
+        position: new THREE.Vector3(0.9, 0.3, -0.4),
+        info: 'About',
+        color: 0x00fff0,
+      },
+    ];
+
+    const markMeshes = marks.map((mark) => {
+      const markMaterial = new THREE.MeshBasicMaterial({ color: mark.color });
+      const markMesh = new THREE.Mesh(markGeometry, markMaterial);
+      markMesh.position.copy(mark.position);
+      sphere.add(markMesh);
+      return {
+        mesh: markMesh,
+        info: mark.info,
+        position: mark.position,
+        color: mark.color,
+      };
+    });
 
     // Lights
     const pointLight = new THREE.PointLight(0x0000ff, 1);
@@ -69,8 +103,9 @@ const ThreeSphere: React.FC = () => {
     };
 
     // Camera
-    const camera = new THREE.PerspectiveCamera(75, sizes.width / sizes.height);
-    camera.position.z = 2.5;
+    const camera = new THREE.PerspectiveCamera(50, sizes.width / sizes.height);
+    camera.position.set(0, 0, 3);
+    camera.lookAt(sphere.position);
     scene.add(camera);
 
     // Renderer
@@ -93,6 +128,57 @@ const ThreeSphere: React.FC = () => {
     };
     window.addEventListener('resize', handleResize);
 
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+
+    const onMouseDown = (event: MouseEvent) => {
+      mouse.x = (event.clientX / sizes.width) * 2 - 1;
+      mouse.y = -(event.clientY / sizes.height) * 2 + 1;
+
+      raycaster.setFromCamera(mouse, camera);
+
+      const intersects = raycaster.intersectObjects([
+        ...markMeshes.map((mark) => mark.mesh),
+        sphere,
+      ]);
+
+      if (intersects.length > 0) {
+        const clickedMark = intersects[0].object;
+        const mark = markMeshes.find((m) => m.mesh === clickedMark);
+        if (mark) {
+          setSelectedPoint(mark.info);
+        }
+
+        if (!isMouseDown) {
+          lastRotationX = sphere.rotation.x;
+          lastRotationY = sphere.rotation.y;
+        }
+        isMouseDown = true;
+        prevMouseX = event.clientX;
+        prevMouseY = event.clientY;
+      }
+    };
+
+    const onMouseUp = () => {
+      isMouseDown = false;
+      lastRotationX = sphere.rotation.x;
+      lastRotationY = sphere.rotation.y;
+    };
+
+    const onMouseMove = (event: MouseEvent) => {
+      if (isMouseDown) {
+        const deltaX = (event.clientX - prevMouseX) * 0.005;
+        const deltaY = (event.clientY - prevMouseY) * 0.005;
+
+        sphere.rotation.y = lastRotationY + deltaX;
+        sphere.rotation.x = lastRotationX + deltaY;
+      }
+    };
+
+    document.addEventListener('mousedown', onMouseDown);
+    document.addEventListener('mouseup', onMouseUp);
+    document.addEventListener('mousemove', onMouseMove);
+
     // GUI controls
     const gui = new dat.GUI();
     const light1 = gui.addFolder('Light 1');
@@ -107,19 +193,26 @@ const ThreeSphere: React.FC = () => {
     light2.add(pointLight2.position, 'z').min(-3).max(3).step(0.01);
     light2.add(pointLight2, 'intensity').min(0).max(10).step(0.01);
 
+    const marksFolder = gui.addFolder('Marks Positions');
+
+    markMeshes.forEach((mark) => {
+      const markFolder = marksFolder.addFolder(`Mark ${mark.info}`);
+      markFolder
+        .add(mark.position, 'x', -3, 5, 0.1)
+        .name('Position X')
+        .onChange(() => mark.mesh.position.copy(mark.position));
+      markFolder
+        .add(mark.position, 'y', -3, 5, 0.1)
+        .name('Position Y')
+        .onChange(() => mark.mesh.position.copy(mark.position));
+      markFolder
+        .add(mark.position, 'z', -3, 5, 0.1)
+        .name('Position Z')
+        .onChange(() => mark.mesh.position.copy(mark.position));
+    });
     // Animation
-    const clock = new THREE.Clock();
 
     const animate = () => {
-      targetX = mouseX * 0.001;
-      targetY = mouseY * 0.001;
-      const elapsedTime = clock.getElapsedTime();
-      sphere.rotation.y = 0.35 * elapsedTime;
-
-      sphere.rotation.x += (targetX - sphere.rotation.x) * 0.05;
-      sphere.rotation.y += (targetY - sphere.rotation.y) * 0.05;
-      sphere.rotation.z += (targetY - sphere.rotation.x) * 0.02;
-
       renderer.render(scene, camera);
       requestAnimationFrame(animate);
     };
@@ -129,12 +222,26 @@ const ThreeSphere: React.FC = () => {
     // Cleanup
     return () => {
       window.removeEventListener('resize', handleResize);
+      document.removeEventListener('mousedown', onMouseDown);
+      document.removeEventListener('mouseup', onMouseUp);
+      document.removeEventListener('mousemove', onMouseMove);
+
       renderer.dispose();
       gui.destroy(); // Destroy GUI on unmount
     };
   }, []);
 
-  return <canvas ref={canvasRef} className="webgl" />;
+  return (
+    <div>
+      <canvas ref={canvasRef} className="webgl" />
+      {selectedPoint && (
+        <div>
+          <h2>Details</h2>
+          <p>{selectedPoint}</p>
+        </div>
+      )}
+    </div>
+  );
 };
 
 export default ThreeSphere;
