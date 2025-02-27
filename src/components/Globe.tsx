@@ -1,133 +1,149 @@
+import { useLoader } from '@react-three/fiber';
+import * as dat from 'dat.gui';
 import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
-import * as dat from 'dat.gui';
-import NormalMap from '../static/textures/NormalMap.png';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader';
+import NormalMap from '../assets/images/mercury.jpg';
+import AstronautModel from '../assets/models/astronaut.glb';
+import AstronautTexture from '../static/textures/astronaut-texture.png';
+
+interface AstronautMesh {
+  astronaut: THREE.Object3D;
+  info: string;
+  position: THREE.Vector3;
+}
 
 const ThreeSphere: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-
   const [selectedPoint, setSelectedPoint] = useState<string | null>(null);
-
   let isMouseDown = false;
-  let lastRotationX = 0;
   let lastRotationY = 0;
   let prevMouseX = 0;
-  let prevMouseY = 0;
+
+  // Load astronaut model once
+  const astronaut = useLoader(GLTFLoader, AstronautModel);
+
+  const radius = 1.1;
+
+  const astronautModels = [
+    { latitude: 45, longitude: 20, info: 'Contacts' },
+    { latitude: -45, longitude: 90, info: 'Experience' },
+    { latitude: 30, longitude: -20, info: 'Skills' },
+    { latitude: -30, longitude: 135, info: 'About' },
+  ];
 
   useEffect(() => {
+    if (!canvasRef.current) return;
+
     // Scene
     const scene = new THREE.Scene();
-
-    // Load texture
     const textureLoader = new THREE.TextureLoader();
     const normalTexture = textureLoader.load(NormalMap);
+    const astronautTexture = textureLoader.load(
+      AstronautTexture,
+      () => {
+        astronaut.scene.traverse((child: THREE.Object3D) => {
+          if (child instanceof THREE.Mesh) {
+            if (child.material instanceof THREE.MeshBasicMaterial) {
+              child.material.map = astronautTexture;
 
-    // Object
-    const geometry = new THREE.SphereGeometry(1, 64, 64);
-
-    // Material
-    const material = new THREE.MeshStandardMaterial();
-    material.metalness = 1.2;
-    material.roughness = 0.5;
-    material.normalMap = normalTexture;
-    material.color = new THREE.Color(0xffffff);
-
-    // Mesh
-    const sphere = new THREE.Mesh(geometry, material);
-    sphere.rotation.x = Math.PI / 2;
+              child.material.needsUpdate = true;
+            }
+          }
+        });
+      },
+      undefined,
+      (error) => {
+        console.error('Error loading texture:', error);
+      }
+    );
+    // Sphere Object
+    const sphere = new THREE.Mesh(
+      new THREE.SphereGeometry(1, 64, 64),
+      new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        map: normalTexture,
+      })
+    );
     sphere.rotation.y = Math.PI / 4;
     scene.add(sphere);
 
-    // Marks
-    const markGeometry = new THREE.SphereGeometry(0.05, 8, 8);
+    // Astronaut Marks
+    const astronautMeshes: AstronautMesh[] = [];
+    // const astronautModels = [
+    //   { position: new THREE.Vector3(-0.7, 0.7, -0.2), info: 'Contacts' },
+    //   { position: new THREE.Vector3(-0.9, -0.4, 0.3), info: 'Experience' },
+    //   { position: new THREE.Vector3(0.1, 0.2, 1), info: 'Skills' },
+    //   { position: new THREE.Vector3(0.9, 0.5, 0.1), info: 'About' },
+    // ];
 
-    const marks: { position: THREE.Vector3; info: string; color: number }[] = [
-      {
-        position: new THREE.Vector3(-0.7, 0.7, -0.2),
-        info: 'Contacts',
-        color: 0xff0000,
-      },
-      {
-        position: new THREE.Vector3(0.1, 0.5, -0.9),
-        info: 'Experience',
-        color: 0x0000ff,
-      },
-      {
-        position: new THREE.Vector3(0.9, 0.4, -0.4),
-        info: 'Skills',
-        color: 0x00ff00,
-      },
-      {
-        position: new THREE.Vector3(0.9, 0.3, -0.4),
-        info: 'About',
-        color: 0x00fff0,
-      },
-    ];
+    astronautModels.forEach((mark) => {
+      const modelClone = astronaut.scene.clone();
 
-    const markMeshes = marks.map((mark) => {
-      const markMaterial = new THREE.MeshBasicMaterial({ color: mark.color });
-      const markMesh = new THREE.Mesh(markGeometry, markMaterial);
-      markMesh.position.copy(mark.position);
-      sphere.add(markMesh);
-      return {
-        mesh: markMesh,
-        info: mark.info,
-        position: mark.position,
-        color: mark.color,
-      };
+      const latitude = mark.latitude * (Math.PI / 180);
+      const longitude = mark.longitude * (Math.PI / 180);
+
+      const x = radius * Math.cos(latitude) * Math.cos(longitude);
+      const y = radius * Math.sin(latitude);
+      const z = radius * Math.cos(latitude) * Math.sin(longitude);
+
+      modelClone.position.set(x, y, z);
+
+      modelClone.lookAt(new THREE.Vector3(0, 10, 0));
+      modelClone.scale.set(0.25, 0.25, 0.25);
+
+      modelClone.traverse((child: THREE.Object3D) => {
+        if (child instanceof THREE.Mesh) {
+          if (child.material instanceof THREE.MeshStandardMaterial) {
+            child.material = new THREE.MeshStandardMaterial({
+              map: child.material.map || null,
+              color: 0xffffff,
+            });
+          }
+        }
+      });
+
+      sphere.add(modelClone); // Add to the main sphere
     });
 
     // Lights
-    const pointLight = new THREE.PointLight(0x0000ff, 1);
-    pointLight.position.set(-1.6, 1.34, 0.17);
-    scene.add(pointLight);
+
+    const ambientLight = new THREE.AmbientLight(0xffffff, 1); // White light
+    scene.add(ambientLight);
+
+    const pointLight1 = new THREE.PointLight(0x0000ff, 1);
+    pointLight1.position.set(2, 1.34, 0.17);
+    scene.add(pointLight1);
 
     const pointLight2 = new THREE.PointLight(0xff0000, 1);
     pointLight2.position.set(2.58, -1.65, -0.15);
     scene.add(pointLight2);
 
-    const ambientLight = new THREE.AmbientLight(0xff0, 0.5);
-    scene.add(ambientLight);
-
-    // Helpers
-    // const pointLightHelper = new THREE.PointLightHelper(pointLight, 1);
-    // scene.add(pointLightHelper);
-
-    // const pointLightHelper2 = new THREE.PointLightHelper(pointLight2, 1);
-    // scene.add(pointLightHelper2);
-
-    // Sizes
-    const sizes = {
-      width: window.innerWidth,
-      height: window.innerHeight,
-    };
-
     // Camera
+    const sizes = { width: window.innerWidth, height: window.innerHeight };
     const camera = new THREE.PerspectiveCamera(50, sizes.width / sizes.height);
     camera.position.set(0, 0, 3);
-    camera.lookAt(sphere.position);
     scene.add(camera);
 
     // Renderer
     const renderer = new THREE.WebGLRenderer({
-      canvas: canvasRef.current!,
+      canvas: canvasRef.current,
       alpha: true,
     });
-    renderer.setClearColor(0x000000, 0);
     renderer.setSize(sizes.width, sizes.height);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
-    // Resize handler
+    // Resize Handler
     const handleResize = () => {
       sizes.width = window.innerWidth;
       sizes.height = window.innerHeight;
       camera.aspect = sizes.width / sizes.height;
       camera.updateProjectionMatrix();
       renderer.setSize(sizes.width, sizes.height);
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     };
     window.addEventListener('resize', handleResize);
 
+    // Mouse Interaction
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
 
@@ -136,42 +152,33 @@ const ThreeSphere: React.FC = () => {
       mouse.y = -(event.clientY / sizes.height) * 2 + 1;
 
       raycaster.setFromCamera(mouse, camera);
-
-      const intersects = raycaster.intersectObjects([
-        ...markMeshes.map((mark) => mark.mesh),
-        sphere,
-      ]);
+      const intersects = raycaster.intersectObjects(
+        astronautMeshes.map((mesh) => mesh.astronaut)
+      );
 
       if (intersects.length > 0) {
-        const clickedMark = intersects[0].object;
-        const mark = markMeshes.find((m) => m.mesh === clickedMark);
-        if (mark) {
-          setSelectedPoint(mark.info);
+        const clickedAstronaut = intersects[0].object;
+        const astronautMesh = astronautMeshes.find(
+          (m) => m.astronaut === clickedAstronaut
+        );
+        if (astronautMesh) {
+          setSelectedPoint(astronautMesh.info);
         }
-
-        if (!isMouseDown) {
-          lastRotationX = sphere.rotation.x;
-          lastRotationY = sphere.rotation.y;
-        }
-        isMouseDown = true;
-        prevMouseX = event.clientX;
-        prevMouseY = event.clientY;
       }
+
+      isMouseDown = true;
+      prevMouseX = event.clientX;
+      lastRotationY = sphere.rotation.y;
     };
 
     const onMouseUp = () => {
       isMouseDown = false;
-      lastRotationX = sphere.rotation.x;
-      lastRotationY = sphere.rotation.y;
     };
 
     const onMouseMove = (event: MouseEvent) => {
       if (isMouseDown) {
-        const deltaX = (event.clientX - prevMouseX) * 0.005;
-        const deltaY = (event.clientY - prevMouseY) * 0.005;
-
+        const deltaX = (prevMouseX - event.clientX) * 0.005;
         sphere.rotation.y = lastRotationY + deltaX;
-        sphere.rotation.x = lastRotationX + deltaY;
       }
     };
 
@@ -179,44 +186,17 @@ const ThreeSphere: React.FC = () => {
     document.addEventListener('mouseup', onMouseUp);
     document.addEventListener('mousemove', onMouseMove);
 
-    // GUI controls
+    // GUI Controls
     const gui = new dat.GUI();
-    const light1 = gui.addFolder('Light 1');
-    light1.add(pointLight.position, 'x').min(-3).max(3).step(0.01);
-    light1.add(pointLight.position, 'y').min(-3).max(3).step(0.01);
-    light1.add(pointLight.position, 'z').min(-3).max(3).step(0.01);
-    light1.add(pointLight, 'intensity').min(0).max(10).step(0.01);
+    const lightFolder = gui.addFolder('Lights');
+    lightFolder.add(pointLight1, 'intensity', 0, 10);
+    lightFolder.add(pointLight2, 'intensity', 0, 10);
 
-    const light2 = gui.addFolder('Light 2');
-    light2.add(pointLight2.position, 'x').min(-3).max(3).step(0.01);
-    light2.add(pointLight2.position, 'y').min(-3).max(3).step(0.01);
-    light2.add(pointLight2.position, 'z').min(-3).max(3).step(0.01);
-    light2.add(pointLight2, 'intensity').min(0).max(10).step(0.01);
-
-    const marksFolder = gui.addFolder('Marks Positions');
-
-    markMeshes.forEach((mark) => {
-      const markFolder = marksFolder.addFolder(`Mark ${mark.info}`);
-      markFolder
-        .add(mark.position, 'x', -3, 5, 0.1)
-        .name('Position X')
-        .onChange(() => mark.mesh.position.copy(mark.position));
-      markFolder
-        .add(mark.position, 'y', -3, 5, 0.1)
-        .name('Position Y')
-        .onChange(() => mark.mesh.position.copy(mark.position));
-      markFolder
-        .add(mark.position, 'z', -3, 5, 0.1)
-        .name('Position Z')
-        .onChange(() => mark.mesh.position.copy(mark.position));
-    });
-    // Animation
-
+    // Animation Loop
     const animate = () => {
       renderer.render(scene, camera);
       requestAnimationFrame(animate);
     };
-
     animate();
 
     // Cleanup
@@ -227,9 +207,9 @@ const ThreeSphere: React.FC = () => {
       document.removeEventListener('mousemove', onMouseMove);
 
       renderer.dispose();
-      gui.destroy(); // Destroy GUI on unmount
+      gui.destroy();
     };
-  }, []);
+  }, [astronaut]);
 
   return (
     <div>
